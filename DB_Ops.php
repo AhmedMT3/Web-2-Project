@@ -1,30 +1,106 @@
 <?php
-echo "<h2>Received Registration Data</h2>";
+class DBOperations {
+    private $conn;
+    
+    public function __construct() {
+        $this->connectDB();
+    }
+    
+    private function connectDB() {
+        $this->conn = new mysqli('localhost', 'fcai_user', '1234', 'user_registration');
+        
+        if ($this->conn->connect_error) {
+            die("Connection failed: " . $this->conn->connect_error);
+        }
+    }
+    
+    // Check if username already exists in the database
+    public function checkUsernameExists($username) {
+        $stmt = $this->conn->prepare("SELECT id FROM users WHERE user_name = ?");
+        $stmt->bind_param("s", $username);
+        $stmt->execute();
+        $stmt->store_result();
+        
+        return $stmt->num_rows > 0;
+    }
 
-// Text inputs
-$fields = [
-  "Full Name" => $_POST['full_name'] ?? '',
-  "Username" => $_POST['user_name'] ?? '',
-  "Phone" => $_POST['phone'] ?? '',
-  "WhatsApp" => $_POST['whatsapp'] ?? '',
-  "Address" => $_POST['address'] ?? '',
-  "Email" => $_POST['email'] ?? '',
-  "Password" => $_POST['password'] ?? '',
-  "Confirm Password" => $_POST['confirm_password'] ?? ''
-];
+    // Validate all user input server-side
+    private function validateInput($data) {
+        $errors = [];
 
-// Print each value
-foreach ($fields as $label => $value) {
-  echo "<strong>$label:</strong> " . htmlspecialchars($value) . "<br>";
+        // Required fields
+        $required = ['full_name', 'user_name', 'email', 'phone', 'whatsapp', 'address', 'password'];
+        foreach ($required as $field) {
+            if (empty($data[$field])) {
+                $errors[$field] = "$field is required";
+            }
+        }
+
+        // Email format
+        if (!filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+            $errors['email'] = "Invalid email format";
+        }
+
+        // Password (matches client-side rules)
+        if (strlen($data['password']) < 8) {
+            $errors['password'] = "Password must be 8+ characters";
+        } elseif (!preg_match('/[0-9]/', $data['password']) || !preg_match('/[!@#$%^&*]/', $data['password'])) {
+            $errors['password'] = "Password needs 1 number and 1 special character";
+        }
+
+        // Password match
+        if ($data['password'] !== $data['confirm_password']) {
+            $errors['confirm_password'] = "Passwords don't match";
+        }
+
+        return count($errors) ? $errors : true;
+    }
+
+    // Registration handler
+    public function registerUser($data) {
+        $validation = $this->validateInput($data);
+        if ($validation !== true) {
+            return ['success' => false, 'errors' => $validation];
+        }
+
+        // Insert user
+        $hashedPassword = password_hash($data['password'], PASSWORD_BCRYPT);
+        $stmt = $this->conn->prepare("INSERT INTO users (full_name, user_name, email, phone, whatsapp, address, password) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        
+        $stmt->bind_param("sssssss", 
+            $data['full_name'],
+            $data['user_name'],
+            $data['email'],
+            $data['phone'],
+            $data['whatsapp'],
+            $data['address'],
+            $hashedPassword,
+        );
+
+        return $stmt->execute() 
+            ? ['success' => true] 
+            : ['success' => false, 'error' => "Database error: " . $stmt->error];
+    }
 }
 
-// Image file details
-if (isset($_FILES['user_image'])) {
-  $image = $_FILES['user_image'];
-  echo "<br><strong>Image Name:</strong> " . htmlspecialchars($image['name']) . "<br>";
-  echo "<strong>Temp Path:</strong> " . htmlspecialchars($image['tmp_name']) . "<br>";
-  echo "<strong>Size:</strong> " . $image['size'] . " bytes<br>";
-} else {
-  echo "<br>No image uploaded.";
+// AJAX username check request
+if (isset($_GET['action']) && $_GET['action'] == 'check_username' && isset($_GET['username'])) {
+    $db = new DBOperations();
+    $username = trim($_GET['username']);
+    
+    header('Content-Type: application/json');
+    echo json_encode([
+        'exists' => $db->checkUsernameExists($username)
+    ]);
+    exit;    
+}
+
+// Handle form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    header('Content-Type: application/json');
+    $db = new DBOperations();
+    $response = $db->registerUser($_POST);
+    echo json_encode($response);
+    exit;
 }
 ?>

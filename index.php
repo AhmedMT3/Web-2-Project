@@ -66,6 +66,54 @@
     </form>
 
     <script src="API_Ops.js"></script>
+    
+    <script>
+        document.getElementById("user_name").addEventListener("blur", function() {
+            const username = this.value.trim();
+            
+            if (username.length < 3) return; 
+            
+            fetch(`DB_Ops.php?action=check_username&username=${encodeURIComponent(username)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.exists) {
+                        alert("Username already taken! Please choose another one.");
+                        document.getElementById("user_name").value = ""; 
+                        document.getElementById("user_name").focus(); 
+                    }
+                })
+                .catch(error => console.error("Error checking username:", error));
+        });
+
+        document.getElementById("registrationForm").addEventListener("submit", function(e) {
+            e.preventDefault();
+            
+            document.querySelectorAll(".error").forEach(el => el.textContent = "");
+
+            const formData = new FormData(this);
+            fetch("DB_Ops.php", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert("Registration successful!");
+                    window.location.href = "success.php";
+                } else {
+                    if (data.errors) {
+                        for (const [field, error] of Object.entries(data.errors)) {
+                            const errorElement = document.getElementById(`${field}_error`);
+                            if (errorElement) errorElement.textContent = error;
+                        }
+                    } else if (data.error) {
+                        alert("Error: " + data.error);
+                    }
+                }
+            })
+            .catch(error => console.error("Error:", error));
+        });
+    </script>    
 </body>
 
 </html>
